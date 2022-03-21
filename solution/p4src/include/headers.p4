@@ -4,6 +4,9 @@
 
 const bit<16> TYPE_IPV4 = 0x800;
 
+/* tuple bit size */
+#define IPV4_TUPLE_BIT_SIZE 104
+
 typedef bit<9>  egressSpec_t;
 typedef bit<48> macAddr_t;
 typedef bit<32> ip4Addr_t;
@@ -69,6 +72,14 @@ struct metadata {
     bit<64> value_sketch5;
     bit<64> value_sketch6;
     bit<64> value_sketch7;
+
+    bit<IPV4_TUPLE_BIT_SIZE> top_bit;
+    bit<1> become_zero;
+    bit<1> should_gen_token;
+    bit<1> queue_is_empty;
+    bit<1> queue_is_full;
+    bit<1> enough_token;
+    bit<1> should_add_queue;
 }
 
 struct headers {
