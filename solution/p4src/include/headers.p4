@@ -73,6 +73,12 @@ struct metadata {
     bit<64> value_sketch6;
     bit<64> value_sketch7;
 
+    bit<32> _srcAddr;
+    bit<32> _dstAddr;
+    bit<16> _srcPort; 
+    bit<16> _dstPort; 
+    bit<8> _protocol; 
+
     bit<IPV4_TUPLE_BIT_SIZE> top_bit;
     bit<1> become_zero;
     bit<1> should_gen_token;
@@ -80,6 +86,9 @@ struct metadata {
     bit<1> queue_is_full;
     bit<1> enough_token;
     bit<1> should_add_queue;
+    bit<64> minimun_value;
+
+    bit<1> should_drop;
 }
 
 struct headers {

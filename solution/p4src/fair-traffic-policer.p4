@@ -13,7 +13,7 @@
 #define SKETCH_CELL_BIT_WIDTH 64
 
 /* token bucket */
-#define TOTAL_CAPACITY 100000
+#define TOTAL_CAPACITY 1
 #define PER_TOKEN_NUM 1
 
 /* timestamp */
@@ -35,27 +35,23 @@ typedef tuple<bit<32>, bit<32>, bit<16>, bit<16>, bit<8>> ipv4_tuple_t;
 #define SKETCH_REGISTER(num) register<bit<SKETCH_CELL_BIT_WIDTH>>(SKETCH_BUCKET_LENGTH) sketch##num
 
 #define IPV4_TUPLE {hdr.ipv4.srcAddr, hdr.ipv4.dstAddr, hdr.tcp.srcPort, hdr.tcp.dstPort, hdr.ipv4.protocol}
+#define TOP_IPV4_TUPLE {meta._srcAddr, meta._dstAddr, meta._srcPort, meta._dstPort, meta._protocol}
 
 #define TUPLE_TO_BIT \
-  ((((((((\
-  (bit<IPV4_TUPLE_BIT_SIZE>)hdr.ipv4.srcAddr << (IPV4_TUPLE_BIT_SIZE - 32)) \
-  & (bit<IPV4_TUPLE_BIT_SIZE>)hdr.ipv4.dstAddr) << (IPV4_TUPLE_BIT_SIZE - 32 - 32)) \
-  & (bit<IPV4_TUPLE_BIT_SIZE>)hdr.tcp.srcPort) << (IPV4_TUPLE_BIT_SIZE - 32 - 32 - 16)) \
-  & (bit<IPV4_TUPLE_BIT_SIZE>)hdr.tcp.dstPort) << (IPV4_TUPLE_BIT_SIZE - 32 - 32 - 16 - 16)) \
-  & (bit<IPV4_TUPLE_BIT_SIZE>)hdr.ipv4.protocol)
+  bit<104> tuple_bit = 0; \
+  tuple_bit[7:0] = hdr.ipv4.protocol; \
+  tuple_bit[23:8] = hdr.tcp.dstPort; \
+  tuple_bit[39:24] = hdr.tcp.srcPort; \
+  tuple_bit[71:40] = hdr.ipv4.dstAddr; \
+  tuple_bit[103:72] = hdr.ipv4.srcAddr; 
 
 #define BIT_TO_TUPLE(num) \
   bit<IPV4_TUPLE_BIT_SIZE> temp = num; \
-  bit<32> _srcAddr; _srcAddr = temp[103:72]; \
-  bit<32> _dstAddr; _dstAddr = temp[71:40];\
-  bit<16> _srcPort; _srcPort = temp[39:24];\
-  bit<16> _dstPort; _dstPort = temp[23:8];\
-  bit<8> _protocol; _protocol = temp[7:0];\
-//   bit<32> _srcAddr; _srcAddr = (bit<32>)temp & (1<<32-1); temp = temp >> 32; \
-//   bit<32> _dstAddr; _dstAddr = (bit<32>)temp & (1<<32-1); temp = temp >> 32;\
-//   bit<16> _srcPort; _srcPort = (bit<16>)temp & (1<<16-1); temp = temp >> 16;\
-//   bit<16> _dstPort; _dstPort = (bit<16>)temp & (1<<16-1); temp = temp >> 16;\
-//   bit<8> _protocol; _protocol = (bit<8>)temp & (1<<8-1); temp = temp >> 8;\
+  meta._srcAddr = temp[103:72]; \
+  meta._dstAddr = temp[71:40]; \
+  meta._srcPort = temp[39:24]; \
+  meta._dstPort = temp[23:8]; \
+  meta._protocol = temp[7:0];
 
 #define GET_SKETCH_INDEX_WITH_TUPLE(num, algorithm, tuple) \
   hash(\
@@ -65,11 +61,9 @@ typedef tuple<bit<32>, bit<32>, bit<16>, bit<16>, bit<8>> ipv4_tuple_t;
     tuple, \
     (bit<32>)SKETCH_BUCKET_LENGTH ); \
   sketch##num.read(meta.value_sketch##num, meta.index_sketch##num); \
-  if (meta.value_sketch##num < minimun_value || minimun_value == 0) {\
-    minimun_value = meta.value_sketch##num; } \
-  meta.value_sketch##num = meta.value_sketch##num + 1; \
-  sketch##num.write(meta.index_sketch##num, meta.value_sketch##num);
-
+  if (meta.value_sketch##num < meta.minimun_value) {\
+    meta.minimun_value = meta.value_sketch##num; \
+  } 
 
 #define INCREASE_SKETCH_COUNT(num) \
   meta.value_sketch##num = meta.value_sketch##num + 1; \
@@ -82,7 +76,7 @@ typedef tuple<bit<32>, bit<32>, bit<16>, bit<16>, bit<8>> ipv4_tuple_t;
     meta.value_sketch##num = 0; \
     meta.become_zero = TURE;\
   } \
-  sketch##num.write(meta.index_sketch##num, meta.value_sketch##num); \
+  sketch##num.write(meta.index_sketch##num, meta.value_sketch##num);
   
 
 /*************************************************************************
@@ -100,18 +94,26 @@ control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
 control MyIngress(inout headers hdr,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
+    
+    SKETCH_REGISTER(0);
+    SKETCH_REGISTER(1);
+    SKETCH_REGISTER(2);
 
     register<time_t>(2) slice_ts;
     register<bit<IPV4_TUPLE_BIT_SIZE>>(QUEUE_CAPACITY) active_queue;
     register<bit<32>>(3) queue_property; // 0: size_index, 1: top_index, 2: tail_index
 
-    SKETCH_REGISTER(0);
-    SKETCH_REGISTER(1);
-    SKETCH_REGISTER(2);
-    //SKETCH_REGISTER(3);
-    //SKETCH_REGISTER(4);
+    register<bit<IPV4_TUPLE_BIT_SIZE>>(1) debug_tool;
+
+    action init() {
+        meta.should_drop = FALSE;
+        meta.enough_token = FALSE;
+        meta.should_add_queue = FALSE;
+        meta.should_gen_token = FALSE;
+    }
 
     action drop() {
+        meta.should_drop = TURE;
         mark_to_drop(standard_metadata);
     }
 
@@ -140,14 +142,16 @@ control MyIngress(inout headers hdr,
         bit<32> queue_top_index; 
         queue_property.read(queue_top_index, QUEUE_TOP_INDEX); 
         bit<32> queue_tail_index; 
-        queue_property.read(queue_tail_index, QUEUE_TAIL_INDEX); 
+        queue_property.read(queue_tail_index, QUEUE_TAIL_INDEX);
+        bit<32> queue_size; 
+        queue_property.read(queue_size, QUEUE_SIZE_INDEX);
         bit<32> next_index; 
         if (queue_tail_index == QUEUE_CAPACITY - 1) next_index = 0;
         else next_index = queue_tail_index + 1;
 
         active_queue.write(queue_tail_index, value);
         queue_property.write(QUEUE_TAIL_INDEX, next_index); 
-        
+        queue_property.write(QUEUE_SIZE_INDEX, queue_size + 1); 
     }
 
     action queue_pop() {
@@ -155,31 +159,33 @@ control MyIngress(inout headers hdr,
         queue_property.read(queue_top_index, QUEUE_TOP_INDEX); 
         bit<32> queue_tail_index; 
         queue_property.read(queue_tail_index, QUEUE_TAIL_INDEX); 
+        bit<32> queue_size; 
+        queue_property.read(queue_size, QUEUE_SIZE_INDEX);
         bit<32> next_index;
 
         if (queue_top_index == QUEUE_CAPACITY - 1) next_index = 0; 
-        else next_index = queue_tail_index + 1; 
+        else next_index = queue_top_index + 1;
         queue_property.write(QUEUE_TOP_INDEX, next_index);
+        queue_property.write(QUEUE_SIZE_INDEX, queue_size - 1);
     }
 
     action check_token(){
-        bit<64> minimun_value = 0;
+        meta.minimun_value = 64w0x7FFFFFFFFFFFFFFF;
         GET_SKETCH_INDEX_WITH_TUPLE(0, crc32_custom, IPV4_TUPLE);
         GET_SKETCH_INDEX_WITH_TUPLE(1, crc32_custom, IPV4_TUPLE);
         GET_SKETCH_INDEX_WITH_TUPLE(2, crc32_custom, IPV4_TUPLE);
-        //SKETCH_COUNT(3, crc32_custom);
-        //SKETCH_COUNT(4, crc32_custom);
 
         /*
         1、get the minimun value as current value
-        2、if (value > Total_Capacity/queue_size) , drop()
+        2、if (value > Total_Capacity/(queue_size+1)) , drop()
         3、otherwise, increase 1
         */
+        
         bit<32> queue_size;
         queue_property.read(queue_size, QUEUE_SIZE_INDEX);
-        if (minimun_value *  (bit<64>)queue_size < TOTAL_CAPACITY) {
+        if (meta.minimun_value *  ((bit<64>)queue_size + 1) < TOTAL_CAPACITY) {
             meta.enough_token = TURE;
-            if (minimun_value == 0) {
+            if (meta.minimun_value == 0) {
                 meta.should_add_queue = TURE;
             }
         }
@@ -198,16 +204,15 @@ control MyIngress(inout headers hdr,
         queue_pop();
 
         BIT_TO_TUPLE(meta.top_bit);
-        ipv4_tuple_t top_ipv4_tuple = {_srcAddr, _dstAddr, _srcPort, _dstPort, _protocol};
-        bit<64> minimun_value = 0;
-        GET_SKETCH_INDEX_WITH_TUPLE(0, crc32_custom, top_ipv4_tuple);
-        GET_SKETCH_INDEX_WITH_TUPLE(1, crc32_custom, top_ipv4_tuple);
-        GET_SKETCH_INDEX_WITH_TUPLE(2, crc32_custom, top_ipv4_tuple);
+        meta.minimun_value = 64w0x7FFFFFFFFFFFFFFF;
+        GET_SKETCH_INDEX_WITH_TUPLE(0, crc32_custom, TOP_IPV4_TUPLE);
+        GET_SKETCH_INDEX_WITH_TUPLE(1, crc32_custom, TOP_IPV4_TUPLE);
+        GET_SKETCH_INDEX_WITH_TUPLE(2, crc32_custom, TOP_IPV4_TUPLE);
 
-        // meta.become_zero = FALSE;
-        // DECREASE_SKETCH_COUNT(0, PER_TOKEN_NUM);
-        // DECREASE_SKETCH_COUNT(1, PER_TOKEN_NUM);
-        // DECREASE_SKETCH_COUNT(2, PER_TOKEN_NUM);
+        meta.become_zero = FALSE;
+        DECREASE_SKETCH_COUNT(0, PER_TOKEN_NUM);
+        DECREASE_SKETCH_COUNT(1, PER_TOKEN_NUM);
+        DECREASE_SKETCH_COUNT(2, PER_TOKEN_NUM);
     }
 
     action check_token_generated() {
@@ -221,12 +226,11 @@ control MyIngress(inout headers hdr,
 
         delta = c_ts - p_ts;
         // Wrap up timestamp
-        // if (delta >= 3294967296) {
-        //     delta -= 3294967296;
-        // }
+        if (delta >= 3294967296) {
+            delta = delta - 3294967296;
+        }
 
         time_t spent_time;
-        meta.should_gen_token = FALSE;
         slice_ts.read(spent_time, REG_SPENT_TIME_INDEX);
         if (spent_time + delta >= GEN_TIME) {
             spent_time = spent_time + delta - GEN_TIME;
@@ -256,6 +260,7 @@ control MyIngress(inout headers hdr,
     apply {
 
         //apply sketch
+        init();
         if (hdr.ipv4.isValid() && hdr.tcp.isValid()){
             check_queue_state();
             check_token_generated();
@@ -273,12 +278,17 @@ control MyIngress(inout headers hdr,
                 INCREASE_SKETCH_COUNT(1);
                 INCREASE_SKETCH_COUNT(2);
                 if (meta.should_add_queue == TURE && meta.queue_is_full == FALSE) {
-                    queue_push(TUPLE_TO_BIT);
+                    TUPLE_TO_BIT;
+                    queue_push(tuple_bit);
                 }
+            }else {
+                drop();
             }
         }
 
-        forwarding.apply();
+        if (meta.should_drop == FALSE) {
+            forwarding.apply();
+        }
     }
 }
 

@@ -42,8 +42,10 @@ class CMSController(object):
     def set_crc_custom_hashes(self):
         i = 0
         for custom_crc32, width in sorted(self.custom_calcs.items()):
+            print(custom_crc32, width)
             self.controller.set_crc32_parameters(custom_crc32, crc32_polinomials[i], 0xffffffff, 0xffffffff, True, True)
             i+=1
+            i %= 3;
 
     def create_hashes(self):
         self.hashes = []
