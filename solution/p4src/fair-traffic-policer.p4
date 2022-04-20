@@ -240,54 +240,58 @@ control MyIngress(inout headers hdr,
         slice_ts.write(REG_SPENT_TIME_INDEX, spent_time);
     }
 
-    action set_egress_port(bit<9> egress_port){
+    action forward(bit<9> egress_port) {
         standard_metadata.egress_spec = egress_port;
     }
 
-    table forwarding {
+    table dmac {
         key = {
-            standard_metadata.ingress_port: exact;
+            hdr.ethernet.dstAddr: exact;
         }
+
         actions = {
-            set_egress_port;
-            drop;
+            forward;
             NoAction;
         }
-        size = 64;
-        default_action = drop;
+        size = 256;
+        default_action = NoAction;
     }
 
     apply {
 
-        //apply sketch
-        init();
-        if (hdr.ipv4.isValid() && hdr.tcp.isValid()){
-            check_queue_state();
-            check_token_generated();
-            if (meta.should_gen_token == TURE && meta.queue_is_empty == FALSE) {
-                generate_token_and_update_queue();
-                if (meta.become_zero == FALSE) {
-                    queue_push(meta.top_bit);
+        bit<1> should_apply_fairPolicer = 0;
+        if (should_apply_fairPolicer == TURE) {
+            init();
+            if (hdr.ipv4.isValid() && hdr.tcp.isValid()){
+                check_queue_state();
+                check_token_generated();
+                if (meta.should_gen_token == TURE && meta.queue_is_empty == FALSE) {
+                    generate_token_and_update_queue();
+                    if (meta.become_zero == FALSE) {
+                        queue_push(meta.top_bit);
+                    }
+                }
+                
+                check_queue_state();
+                check_token();
+                if (meta.enough_token == TURE) {
+                    INCREASE_SKETCH_COUNT(0);
+                    INCREASE_SKETCH_COUNT(1);
+                    INCREASE_SKETCH_COUNT(2);
+                    if (meta.should_add_queue == TURE && meta.queue_is_full == FALSE) {
+                        TUPLE_TO_BIT;
+                        queue_push(tuple_bit);
+                    }
+                }else {
+                    drop();
                 }
             }
-            
-            check_queue_state();
-            check_token();
-            if (meta.enough_token == TURE) {
-                INCREASE_SKETCH_COUNT(0);
-                INCREASE_SKETCH_COUNT(1);
-                INCREASE_SKETCH_COUNT(2);
-                if (meta.should_add_queue == TURE && meta.queue_is_full == FALSE) {
-                    TUPLE_TO_BIT;
-                    queue_push(tuple_bit);
-                }
-            }else {
-                drop();
-            }
-        }
 
-        if (meta.should_drop == FALSE) {
-            forwarding.apply();
+            if (meta.should_drop == FALSE) {
+                dmac.apply();
+            }
+        }else {
+            dmac.apply();
         }
     }
 }
