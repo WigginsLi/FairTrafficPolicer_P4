@@ -1,4 +1,4 @@
-"Interval start","TCP1","TCP2"
+"Interval start","CUBIC","BBR"
 0,5.67397e+06,0
 1,6.94768e+06,0
 2,4.13891e+06,0
