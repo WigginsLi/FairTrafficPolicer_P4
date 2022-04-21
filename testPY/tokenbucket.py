@@ -12,20 +12,20 @@ import time
 import os
 
 myBandwidth = 10    # bandwidth of link ink Mbps
-myDelay = ['10ms', '10ms']    # latency of each bottleneck link
+myDelay = ['10ms']    # latency of each bottleneck link
 myQueueSize = 5  # buffer size in packets
 myLossPercentage = 0   # random loss on bottleneck links
 
 #
-#           h2      h4       h6
-#           |       |        |
-#           |       |        |
-#           |       |        |
-#   h1 ---- S1 ---- S2 ----- S3 ---- h8
-#           |   10ms |  10ms  |
-#           |       |        |
-#           |       |        |
-#           h3      h5       h7
+#           h2      h4       
+#           |       |        
+#           |       |        
+#           |       |        
+#   h1 ---- S1 ---- S2 ----- h6 
+#           |   10ms |    
+#           |        |        
+#           |        |        
+#           h3       h5      
 #
 #
 
@@ -34,7 +34,6 @@ class ParkingLotTopo( Topo ):
     def build( self, n=2 ):
         switch1 = self.addSwitch('s1')
         switch2 = self.addSwitch('s2')
-        # switch3 = self.addSwitch('s3')
         
         # Setting the bottleneck link parameters (htb -> Hierarchical token bucket rate limiting)
         self.addLink( switch1, switch2, 
@@ -44,13 +43,6 @@ class ParkingLotTopo( Topo ):
             use_tfb=True,
             max_queue_size=myQueueSize,
             )
-        # self.addLink( switch2, switch3, 
-        #     bw=myBandwidth, 
-        #     delay=myDelay[1], 
-        #     loss=myLossPercentage, 
-        #     use_htb=True,
-        #     max_queue_size=myQueueSize, 
-        #     )
 
         for h in range(6):
             host = self.addHost('h%s' % (h + 1))
@@ -58,8 +50,6 @@ class ParkingLotTopo( Topo ):
                 self.addLink(host, switch1) # one host to switch 1 (h1, h2, h3)
             elif h+1 <= 6:
                 self.addLink(host, switch2) # n hosts to switch 2 (h4, h5)
-            # else:
-            #     self.addLink(host, switch3) # n hosts to switch 3 (h6, h7, h8)
 
 
 def perfTest():
