@@ -13,15 +13,15 @@
 #define SKETCH_CELL_BIT_WIDTH 64
 
 /* token bucket */
-#define TOTAL_CAPACITY 1
-#define PER_TOKEN_NUM 1
+#define TOTAL_CAPACITY 180 * 1024
+#define PER_TOKEN_NUM 104857
 
 /* timestamp */
 #define REG_TIMESTAMP_INDEX 0
 #define REG_SPENT_TIME_INDEX 1
 
 /* generate time for a token */
-#define GEN_TIME 1000
+#define GEN_TIME 10000
 
 /* queue capacity for active queue and some property for queue */
 #define QUEUE_CAPACITY 1000
@@ -65,8 +65,8 @@ typedef tuple<bit<32>, bit<32>, bit<16>, bit<16>, bit<8>> ipv4_tuple_t;
     meta.minimun_value = meta.value_sketch##num; \
   } 
 
-#define INCREASE_SKETCH_COUNT(num) \
-  meta.value_sketch##num = meta.value_sketch##num + 1; \
+#define INCREASE_SKETCH_COUNT(num, token_num) \
+  meta.value_sketch##num = meta.value_sketch##num + token_num; \
   sketch##num.write(meta.index_sketch##num, meta.value_sketch##num);
 
 #define DECREASE_SKETCH_COUNT(num, token_num) \
@@ -183,7 +183,8 @@ control MyIngress(inout headers hdr,
         
         bit<32> queue_size;
         queue_property.read(queue_size, QUEUE_SIZE_INDEX);
-        if (meta.minimun_value *  ((bit<64>)queue_size + 1) < TOTAL_CAPACITY) {
+        bit<64> pkt_length = (bit<64>)standard_metadata.packet_length;
+        if ((meta.minimun_value + pkt_length) *  ((bit<64>)queue_size + 1) < TOTAL_CAPACITY) {
             meta.enough_token = TURE;
             if (meta.minimun_value == 0) {
                 meta.should_add_queue = TURE;
@@ -226,8 +227,10 @@ control MyIngress(inout headers hdr,
 
         delta = c_ts - p_ts;
         // Wrap up timestamp
-        if (delta >= 3294967296) {
-            delta = delta - 3294967296;
+        if (p_ts ==0) {
+            delta = 0;
+        }else if (delta >= GEN_TIME) {
+            delta = GEN_TIME;
         }
 
         time_t spent_time;
@@ -238,6 +241,14 @@ control MyIngress(inout headers hdr,
         }
 
         slice_ts.write(REG_SPENT_TIME_INDEX, spent_time);
+    }
+
+    action consume_token() {
+        bit<64> pkt_length = (bit<64>)standard_metadata.packet_length;
+
+        INCREASE_SKETCH_COUNT(0, pkt_length);
+        INCREASE_SKETCH_COUNT(1, pkt_length);
+        INCREASE_SKETCH_COUNT(2, pkt_length);
     }
 
     action forward(bit<9> egress_port) {
@@ -259,7 +270,7 @@ control MyIngress(inout headers hdr,
 
     apply {
 
-        bit<1> should_apply_fairPolicer = 0;
+        bit<1> should_apply_fairPolicer = TURE;
         if (should_apply_fairPolicer == TURE) {
             init();
             if (hdr.ipv4.isValid() && hdr.tcp.isValid()){
@@ -275,9 +286,7 @@ control MyIngress(inout headers hdr,
                 check_queue_state();
                 check_token();
                 if (meta.enough_token == TURE) {
-                    INCREASE_SKETCH_COUNT(0);
-                    INCREASE_SKETCH_COUNT(1);
-                    INCREASE_SKETCH_COUNT(2);
+                    consume_token();
                     if (meta.should_add_queue == TURE && meta.queue_is_full == FALSE) {
                         TUPLE_TO_BIT;
                         queue_push(tuple_bit);
