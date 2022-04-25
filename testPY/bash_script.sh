@@ -2,7 +2,7 @@
 
 echo "" > TCP  
 
-pre="10.0.0."
+pre="10.0.1."
 S="21"
 
 ./lanchIperfS.sh
