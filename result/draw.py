@@ -1,21 +1,24 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-fileName = "bbr_vs_bbr_nofair"
+fileName = "bbr_vs_bbr_fair_2"
 y1_field = "BBR_1"
 y2_field = "BBR_2"
+# y3_field = "BBR"
 
 data=pd.read_csv("./csv/" + fileName + ".csv")
 
 X = data["Interval start"]
 Y1 = data[y1_field]
 Y2 = data[y2_field]
+# Y3 = data[y3_field]
 
 fig = plt.figure()
 a1 = fig.add_axes([0.15,0.1,0.8,0.8])
 
 a1.plot(X,Y1/1024,"b.-", label=y1_field)
 a1.plot(X,Y2/1024,"r.-", label=y2_field)
+# a1.plot(X,Y3/1024,"y.-", label=y3_field)
 
 a1.set_xlabel('Time(s)')
 a1.set_ylabel('GoodPut(Mbps)')

@@ -44,11 +44,11 @@ class ParkingLotTopo( Topo ):
             max_queue_size=myQueueSize,
             )
 
-        for h in range(6):
+        for h in range(21):
             host = self.addHost('h%s' % (h + 1))
-            if h+1 <= 3:
+            if h+1 <= 20:
                 self.addLink(host, switch1) # one host to switch 1 (h1, h2, h3)
-            elif h+1 <= 6:
+            elif h+1 <= 21:
                 self.addLink(host, switch2) # n hosts to switch 2 (h4, h5)
 
 

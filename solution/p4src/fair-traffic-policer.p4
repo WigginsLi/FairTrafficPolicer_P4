@@ -14,14 +14,14 @@
 
 /* token bucket */
 #define TOTAL_CAPACITY 180 * 1024
-#define PER_TOKEN_NUM 104857
+#define PER_TOKEN_NUM 41943
 
 /* timestamp */
 #define REG_TIMESTAMP_INDEX 0
 #define REG_SPENT_TIME_INDEX 1
 
 /* generate time for a token */
-#define GEN_TIME 10000
+#define GEN_TIME 4000
 
 /* queue capacity for active queue and some property for queue */
 #define QUEUE_CAPACITY 1000
@@ -103,7 +103,7 @@ control MyIngress(inout headers hdr,
     register<bit<IPV4_TUPLE_BIT_SIZE>>(QUEUE_CAPACITY) active_queue;
     register<bit<32>>(3) queue_property; // 0: size_index, 1: top_index, 2: tail_index
 
-    register<bit<IPV4_TUPLE_BIT_SIZE>>(1) debug_tool;
+    // register<bit<IPV4_TUPLE_BIT_SIZE>>(1) debug_tool;
 
     action init() {
         meta.should_drop = FALSE;
