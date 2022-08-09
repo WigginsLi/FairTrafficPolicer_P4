@@ -18,7 +18,7 @@ class CMSController(object):
         self.controller = SimpleSwitchThriftAPI(self.thrift_port)
 
         self.custom_calcs = self.controller.get_custom_crc_calcs()
-        self.register_num =  3 #len(self.custom_calcs)
+        self.register_num =  len(self.custom_calcs)
 
         self.init()
         self.registers = []
@@ -42,10 +42,8 @@ class CMSController(object):
     def set_crc_custom_hashes(self):
         i = 0
         for custom_crc32, width in sorted(self.custom_calcs.items()):
-            print(custom_crc32, width)
             self.controller.set_crc32_parameters(custom_crc32, crc32_polinomials[i], 0xffffffff, 0xffffffff, True, True)
             i+=1
-            i %= 3;
 
     def create_hashes(self):
         self.hashes = []
@@ -74,11 +72,11 @@ class CMSController(object):
         flows = pickle.load(open(ground_truth_file, "rb"))
         for flow, n_packets in flows.items():
             cms = self.get_cms(flow, mod)
-            print("Packets sent and read by the cms: {}/{}".format(n_packets, cms))
+            # print("Packets sent and read by the cms: {}/{}".format(n_packets, cms))
             if not (cms <(n_packets + (eps*n))):
                 confidence_count +=1
 
-        print("Not hold for {}%".format(float(confidence_count)/len(flows)*100))
+        print("{}".format(float(confidence_count)/len(flows)))
 
 
 if __name__ == "__main__":

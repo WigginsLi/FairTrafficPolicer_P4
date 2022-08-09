@@ -60,8 +60,6 @@ def perfTest():
     net.start()
     print("Dumping host connections")
     dumpNodeConnections( net.hosts )
-    print("Testing network connectivity")
-    net.pingAll()
     CLI( net )  # start mininet interface
     net.stop() # exit mininet
 
